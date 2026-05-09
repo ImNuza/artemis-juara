@@ -1,0 +1,10 @@
+config.env
+.env
+.claude/
+__pycache__/
+.DS_Store
+*.pyc
+Temporary/
+archive/
+bitcoin (ImNuza work)/
+altcoin and equities (Xynerss)/

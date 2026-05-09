@@ -1,0 +1,4 @@
+excluded,sharpe,max_dd,ann_return,final_equity,calmar,time_in_market,sharpe_delta
+funding_rate,0.63,-34.3%,26.6%,2.79x,0.78,17%,-0.5199999999999999
+price_momentum,1.14,-24.9%,51.5%,6.08x,2.07,17%,-0.010000000000000009
+none (baseline),1.15,-16.4%,44.5%,4.95x,2.71,17%,0.0

@@ -1,0 +1,2 @@
+date,note
+DEPRECATED,REVENUE metric returns zero for BTC; miner revenue now computed in data_loader.py from btc_fees.csv + btc_emissions_native.csv * btc_price.csv

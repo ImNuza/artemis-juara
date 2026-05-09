@@ -1,0 +1,3 @@
+window,sharpe,max_dd,ann_return,final_equity,optimal_threshold,time_in_market
+train,0.99,-6.3,20.2,1.44,50,3.8
+test,0.93,-42.7,58.1,4.03,50,52.8

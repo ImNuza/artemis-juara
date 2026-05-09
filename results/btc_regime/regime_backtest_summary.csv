@@ -1,0 +1,5 @@
+strategy,final_value_usd,total_return,ann_return,ann_volatility,sharpe,max_drawdown,calmar
+Option A: Plan (contrarian),137629.0,0.3763,0.0517,0.3638,0.142,-0.6907,0.075
+Option B: De-inverted (trend),372181.0,2.7218,0.2303,0.2974,0.774,-0.4688,0.491
+Option D: Trend + Fed BS macro,147993.0,0.4799,0.0638,0.1724,0.37,-0.2202,0.29
+BTC Buy & Hold,1124281.0,10.2428,0.4646,0.6018,0.772,-0.7672,0.606
