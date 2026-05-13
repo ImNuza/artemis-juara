@@ -215,6 +215,9 @@ def _header(result: pd.DataFrame) -> str:
         "# Position Log — BTC Regime-Gated Alt Factor Strategy\n\n"
         "Auto-generated from the integrated backtest (`strategy/alts/backtest.py`). "
         "Re-run `python strategy/alts/position_log.py` to refresh.\n\n"
+        "**Note:** BTC is the regime gate signal only — it is never held as a position. "
+        "The strategy trades alt perps on Hyperliquid; BTC price and on-chain data "
+        "determine whether the strategy is deployed (BULL) or flat (BEAR/NEUTRAL).\n\n"
         f"_Window: {result.index[0].date()} → {result.index[-1].date()}._\n\n"
         "---\n\n"
     )

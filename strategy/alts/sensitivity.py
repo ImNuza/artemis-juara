@@ -26,6 +26,7 @@ def run_with_threshold(bull_threshold):
     fees = bt.load_artemis_weekly(bt.FEES_PATH)
     dau = bt.load_artemis_weekly(bt.DAU_PATH)
     btc_price = bt.load_btc_price()
+    equity_rev = bt.load_equity_quarterly(bt.EQUITY_REVENUE_PATH, prices.index)
 
     regime_csv = DATA_DIR / "btc_regime_weekly_optionB.csv"
     regime = bt.load_ImNuza_regime(regime_csv, btc_price)
@@ -35,7 +36,7 @@ def run_with_threshold(bull_threshold):
     regime.loc[regime["btc_score"] >= bull_threshold, "regime"] = "BULL"
     regime.loc[regime["btc_score"] <= bt.BEAR_THRESHOLD, "regime"] = "BEAR"
 
-    alt_scores = bt.compute_alt_scores(prices, funding, fees, dau)
+    alt_scores = bt.compute_alt_scores(prices, funding, fees, dau, equity_rev)
     backtest_df = bt.run_backtest(prices, funding, regime, alt_scores)
 
     metrics = bt.compute_metrics(backtest_df["equity"])

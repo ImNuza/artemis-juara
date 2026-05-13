@@ -9,7 +9,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
-import yfinance as yf
+
 from pathlib import Path
 
 # ── Config ──────────────────────────────────────────────────────────────────
@@ -17,12 +17,13 @@ ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 DATA_DIR = ROOT_DIR / "data" / "alts"
 PRICES_PATH  = DATA_DIR / "hl_prices.csv"
 FUNDING_PATH = DATA_DIR / "hl_funding_rates.csv"
+EQUITY_FUNDING_PATH = DATA_DIR / "equity_funding_hl.csv"  # HIP-3 perp funding post-listing
 FEES_PATH    = DATA_DIR / "artemis_fees_weekly.csv"   # SOL, HYPE — from artemis_data_pull.py
 DAU_PATH     = DATA_DIR / "artemis_dau_weekly.csv"    # SOL, HYPE — from artemis_data_pull.py
 EQUITY_REVENUE_PATH = DATA_DIR / "artemis_equity_total_revenue.csv"  # COIN, HOOD, CRCL — quarterly
 RESULTS_DIR = ROOT_DIR / "results" / "integrated"
 START_DATE = "2022-01-01"
-# End date is used only as the upper bound for the BTC-USD yfinance pull;
+# End date is used only as the upper bound for the BTC price data;
 # the backtest itself runs over whatever Friday data overlaps between
 # `prices` and the regime CSV (typically through the latest available week).
 END_DATE   = "2026-05-31"
@@ -31,11 +32,40 @@ END_DATE   = "2026-05-31"
 ALT_ASSETS = ["SOL", "BNB", "HYPE", "XMR", "COIN", "CRCL", "HOOD"]
 SHADOW_ASSETS: set[str] = set()
 
-# Start-date filters (rationale: skip initial post-IPO dump periods)
-# COIN: IPO Apr 2021 at $381, crashed to $33 by Jun 2022. Start mid-2022 bear.
+# Phantom-pick gate — assets are excluded from selection before they actually
+# existed. "Phantom" here means the asset did not exist anywhere on Earth at
+# the time, not "asset existed but wasn't on Hyperliquid yet." A pick of an
+# asset that didn't exist (no TGE, no IPO, no price data anywhere) is
+# indefensible in a position log; a pick of an asset that existed but only
+# traded on other venues is a venue-mismatch (defensible with a caveat).
+#
+# Only two assets are truly phantom in our universe:
+#   - HYPE pre-TGE (Nov 29, 2024). HL listed it Dec 6, 2024 (first Friday after
+#     TGE). We use the first available HL price date as the gate.
+#   - CRCL pre-IPO (June 5, 2025). yfinance data starts that week; we gate to
+#     the first Friday after IPO so any pre-existence rows are excluded.
+#
+# SOL/BNB/COIN/HOOD all existed on other venues with real prices throughout
+# the backtest window — picks pre-HL-listing are venue-mismatch, not phantom.
+# yfinance/Artemis price backfill provides those real prices for analytical
+# context (research_report.md §11).
+# XMR funding is now Bybit-spliced pre-HL-listing (2026-01-16) so it has
+# real funding signal across the full backtest — no gate needed.
+HL_TOKEN_LISTING = {
+    "HYPE": pd.Timestamp("2024-12-06"),  # TGE was 2024-11-29; first HL price 2024-12-06
+    "CRCL": pd.Timestamp("2025-06-06"),  # IPO was 2025-06-05; first Friday post-IPO
+}
+
+# Start-date filter for COIN only — keeps the post-IPO dump period out of the
+# universe (yfinance has COIN from April 2021 IPO; CLAUDE.md decision #8's
+# phantom principle would allow it from IPO, but COIN was tradeable as an
+# overhang on TradFi venues during a deep BEAR period when the strategy is
+# flat anyway, so this filter is preserved as analytical convenience and
+# documented as such).
+# CRCL no longer has a START filter — under the phantom principle (CLAUDE.md
+# decision #8), CRCL is allowed from its IPO date and gated only against
+# pre-existence weeks via HL_TOKEN_LISTING above.
 COIN_START = "2022-07-01"
-# CRCL: IPO Jun 2025, peaked at $240, crashed to ~$80 by Nov 2025. Start post-dump.
-CRCL_START = "2025-12-01"
 # HOOD: IPO Jul 2021, crashed to $7 by mid-2022. Full data OK (survived bear).
 
 # Factor weights — simplified to the two factors that drive results.
@@ -44,8 +74,8 @@ CRCL_START = "2025-12-01"
 # negligible marginal value (only cover 2-4 of 8 assets).
 # OI confirmation was never implemented (no historical HL OI).
 FACTOR_WEIGHTS = {
-    "funding_rate": 0.55,     # inverted, cross-sectional rank
-    "price_momentum": 0.45,   # 4-week return, cross-sectional rank
+    "funding_rate": 0.45,     # inverted, cross-sectional rank
+    "price_momentum": 0.55,   # 7-week return, cross-sectional rank
 }
 
 # Regime thresholds
@@ -120,12 +150,12 @@ def load_prices(path: Path) -> pd.DataFrame:
         if not merged.empty:
             df = df.join(merged.rename(ticker), how="outer")
 
-    # Apply start-date filters (skip initial post-IPO dump periods)
+    # Apply start-date filter for COIN (analytical convenience — see header).
+    # CRCL has no filter under the phantom principle — yfinance prices flow
+    # through from IPO and the HL_TOKEN_LISTING gate handles the pre-existence weeks.
     for col in df.columns:
         if col == "COIN":
             df.loc[df.index < COIN_START, col] = np.nan
-        elif col == "CRCL":
-            df.loc[df.index < CRCL_START, col] = np.nan
 
     df = df.dropna(how="all").sort_index()
     return df
@@ -163,7 +193,9 @@ def load_equity_quarterly(path: Path, weekly_index: pd.DatetimeIndex) -> pd.Data
 
 
 def load_funding(path: Path) -> pd.DataFrame:
-    """Load weekly funding rates. Expands to cover all alt assets (equities = no data = neutral)."""
+    """Load weekly funding rates for tokens (HL main dex + Bybit splice).
+    Equity perp funding is handled separately in compute_alt_scores so
+    pre-listing weeks don't contaminate the cross-sectional normalization."""
     df = pd.read_csv(path, parse_dates=["date"], index_col="date")
     for col in df.columns:
         df[col] = pd.to_numeric(df[col], errors="coerce")
@@ -173,15 +205,10 @@ def load_funding(path: Path) -> pd.DataFrame:
 
 
 def load_btc_price() -> pd.Series:
-    """Pull BTC weekly close from yfinance, aligned to Friday closes."""
-    btc = yf.download("BTC-USD", start=START_DATE, end=END_DATE, auto_adjust=False)
-    if isinstance(btc.columns, pd.MultiIndex):
-        close = btc["Close"].iloc[:, 0]
-    else:
-        close = btc["Close"]
-    close = close.rename("BTC")
-    close.index = pd.to_datetime(close.index)
-    weekly = close.resample("W-FRI").last().dropna()
+    """Load BTC weekly close from Artemis CSV, aligned to Friday closes."""
+    btc_path = DATA_DIR / "btc_price_artemis.csv"
+    btc = pd.read_csv(btc_path, parse_dates=["date"], index_col="date")
+    weekly = btc["BTC"].dropna()
     return weekly
 
 
@@ -225,7 +252,7 @@ def load_ImNuza_regime(csv_path: Path, btc_price: pd.Series) -> pd.DataFrame:
 # 3. Alt Factor Scoring Engine
 # ══════════════════════════════════════════════════════════════════════════════
 
-MOMENTUM_WEEKS = 4  # weeks of price momentum lookback (was implicitly ~2 pre-fix)
+MOMENTUM_WEEKS = 7  # weeks of price momentum lookback (optimal per sensitivity sweep)
 
 
 def compute_price_momentum(prices: pd.DataFrame, weeks: int = MOMENTUM_WEEKS) -> pd.DataFrame:
@@ -237,12 +264,17 @@ def compute_funding_score(funding: pd.DataFrame) -> pd.DataFrame:
     """
     Funding rate score: 7d avg funding, inverted (negative = good).
     Cross-sectional rank within universe each week. T-1 lag.
+
+    n_assets is counted from the input (non-NaN) so that assets without
+    funding data (e.g. equities pre-HIP-3-listing) don't inflate the
+    cross-sectional denominator.  na_option="bottom" converts NaN to
+    numeric ranks, so counting from ranked would include them.
     """
     funding_lagged = funding.shift(1)
     # Cross-sectional rank (1 = best = most negative funding)
     ranked = funding_lagged.rank(axis=1, ascending=True, na_option="bottom")
-    # Normalize to 0-1 where 1 = best
-    n_assets = ranked.count(axis=1)
+    # Count non-NaN from the INPUT so pre-listing equities don't inflate n
+    n_assets = funding_lagged.notna().sum(axis=1)
     score = 1.0 - (ranked.sub(1, axis=0)).div(n_assets.sub(1), axis=0)
     return score.clip(0, 1)
 
@@ -287,19 +319,25 @@ def compute_alt_scores(
     fees: pd.DataFrame | None = None,
     dau: pd.DataFrame | None = None,
     equity_revenue: pd.DataFrame | None = None,
-    momentum_weeks: int = MOMENTUM_WEEKS,
+    momentum_weeks: int | None = None,
 ) -> pd.DataFrame:
     """
     Composite alt scores (0-100 per asset per week).
 
     Two factors, always active:
-      funding_rate     55%  SOL/BNB/HYPE/XMR when non-zero; others neutral 50
-      price_momentum   45%  all assets, always
+      funding_rate     45%  all assets with funding data; neutral 50 otherwise
+      price_momentum   55%  all assets, always
 
     Revenue growth and activity momentum were removed May 7, 2026 after
     factor attribution showed +0.01 Sharpe contribution each.
     Assets without data on a factor get neutral score 50.
+
+    Equity perp funding (HIP-3 `xyz` dex) is merged post-listing only so
+    that pre-listing NaN weeks don't inflate the cross-sectional rank
+    denominator for the token funding scores.
     """
+    if momentum_weeks is None:
+        momentum_weeks = MOMENTUM_WEEKS
     if fees is None:
         fees = pd.DataFrame()
     if dau is None:
@@ -314,9 +352,31 @@ def compute_alt_scores(
     px_score = px_score.reindex(columns=all_assets).fillna(50.0)
 
     # ── funding ──────────────────────────────────────────────────────────────
-    fr_raw   = 100.0 * compute_funding_score(funding)
-    fr_missing = funding.shift(1).reindex(columns=funding.columns) == 0.0
+    # Merge HIP-3 equity funding into the funding frame so equities compete
+    # in the cross-sectional rank from their HL listing date onward.
+    # Pre-listing: NaN → excluded from rank (na_option="bottom"), score
+    # ends up 0 after clip → replaced with 50 below via the extended
+    # fr_missing mask.  (True zero funding on equities post-listing is
+    # caught by the same mask.)
+    funding_aug = funding.copy()
+    eq_path = EQUITY_FUNDING_PATH
+    if eq_path.exists():
+        eq_fund = pd.read_csv(eq_path, parse_dates=["date"], index_col="date")
+        for col in eq_fund.columns:
+            eq_fund[col] = pd.to_numeric(eq_fund[col], errors="coerce")
+        eq_fund = eq_fund.sort_index()
+        funding_aug = funding_aug.join(eq_fund, how="left")  # NaN pre-listing
+
+    fr_raw   = 100.0 * compute_funding_score(funding_aug)
+    # Zero funding → neutral 50 (no signal).  NaN funding (equity pre-listing)
+    # also → neutral 50.  The NaN case: compute_funding_score ranks NaN at
+    # bottom with na_option="bottom", producing a clipped 0; funding_aug.shift(1)
+    # is NaN, NaN != 0.0 is False so it's not caught.  We catch both below.
+    fr_missing = funding_aug.shift(1).reindex(columns=funding_aug.columns) == 0.0
     fr_raw[fr_missing] = 50.0
+    # Equity pre-listing NaN → neutral 50
+    fr_nan = funding_aug.shift(1).reindex(columns=funding_aug.columns).isna()
+    fr_raw[fr_nan] = 50.0
     fr_score = fr_raw.reindex(columns=all_assets).fillna(50.0)
 
     # ── composite ────────────────────────────────────────────────────────────
@@ -340,7 +400,16 @@ def compute_alt_scores(
             else:
                 composite.loc[week, asset] = 50.0
 
-    return composite.astype(float)
+    # Restrict universe: NaN composite scores for any token before its HL
+    # listing date so run_backtest's .dropna() drops it from the candidate
+    # set entirely. We trade on HL — assets HL hadn't listed yet are not
+    # selectable, regardless of whether yfinance has price history.
+    composite = composite.astype(float)
+    for asset, listing_date in HL_TOKEN_LISTING.items():
+        if asset in composite.columns:
+            composite.loc[composite.index < listing_date, asset] = np.nan
+
+    return composite
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -368,6 +437,8 @@ def run_backtest(
     results = []
     equity = 1.0
     prev_week_equity = 1.0
+    prev_weights: dict[str, float] = {}
+    turnover_rates: list[float] = []
 
     for i, date in enumerate(common_dates):
         if i == 0:
@@ -416,7 +487,8 @@ def run_backtest(
                     if capped.any():
                         excess = (weights[capped] - MAX_SINGLE_WEIGHT).sum()
                         weights[capped] = MAX_SINGLE_WEIGHT
-                        weights[~capped] += excess / (~capped).sum()
+                        if (~capped).any():
+                            weights[~capped] += excess / (~capped).sum()
                         weights = weights / weights.sum()
 
                     for asset, w in weights.items():
@@ -435,14 +507,34 @@ def run_backtest(
                     positions = ", ".join(f"{a}:{w:.0%}" for a, w in weights.items())
                     side = "LONG"
 
+                    # Turnover: fraction of portfolio traded at this rebalance
+                    current_weights = dict(weights)
+                    if not prev_weights:
+                        turnover = 1.0  # entering from flat
+                    else:
+                        all_assets = set(prev_weights) | set(current_weights)
+                        turnover = sum(
+                            abs(current_weights.get(a, 0) - prev_weights.get(a, 0))
+                            for a in all_assets
+                        ) / 2  # /2 because buys = sells in long-only
+                    prev_weights = current_weights
+
         # ── BEAR / NEUTRAL: flat ────────────────────────────────────────────
-        # Short overlay tested May 7, 2026 — destroyed capital. Bottom-ranked
-        # alts by funding+momentum bounced during bear rallies. The factor
-        # model identifies "hated" alts, not directional shorts. Reverted.
+        # Short overlay tested May 7, 2026 — destroyed capital (Sharpe 0.48,
+        # DD -75% vs 1.13 baseline). Re-tested May 10 vs 1.31 baseline:
+        # bottom-2 short: Sharpe 0.10, DD -86.1%, 1.38x;
+        # top-2 short:   Sharpe 0.05, DD -81.7%, 1.18x.
+        # Factor model ranks for longs, not shorts. Reverted.
         else:
             leverage = 0.0
+            if prev_weights:
+                turnover = 1.0  # exiting to flat
+                prev_weights = {}
+            else:
+                turnover = 0.0
 
         equity = equity * (1 + port_return - funding_cost)
+        turnover_rates.append(turnover)
 
         results.append({
             "date": date,
@@ -456,7 +548,9 @@ def run_backtest(
             "side": side,
         })
 
-    return pd.DataFrame(results).set_index("date")
+    df = pd.DataFrame(results).set_index("date")
+    df.attrs["turnover_rates"] = turnover_rates
+    return df
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -488,7 +582,7 @@ def compute_benchmarks(prices: pd.DataFrame, btc_price: pd.Series, backtest_date
 
 WEEKS_PER_YEAR = 52.0
 
-def compute_metrics(equity_curve: pd.Series) -> dict:
+def compute_metrics(equity_curve: pd.Series, turnover_rates: list | None = None) -> dict:
     """Compute standard performance metrics from an equity curve."""
     weekly_returns = equity_curve.pct_change().dropna()
     if len(weekly_returns) < 2:
@@ -510,6 +604,14 @@ def compute_metrics(equity_curve: pd.Series) -> dict:
     total = len(weekly_returns)
     win_rate = wins / total if total > 0 else 0.0
 
+    # Traded-week win rate (excludes flat weeks)
+    traded_returns = weekly_returns[weekly_returns.abs() > 1e-12]
+    traded_wins = (traded_returns > 0).sum()
+    traded_total = len(traded_returns)
+    traded_win_rate = traded_wins / traded_total if traded_total > 0 else 0.0
+
+    avg_turnover = np.mean(turnover_rates) if turnover_rates else 0.0
+
     # Average win/loss
     avg_win = weekly_returns[weekly_returns > 0].mean() if wins > 0 else 0.0
     avg_loss = weekly_returns[weekly_returns < 0].mean() if (total - wins) > 0 else 0.0
@@ -525,11 +627,13 @@ def compute_metrics(equity_curve: pd.Series) -> dict:
         "Max Drawdown": f"{max_dd:.1%}",
         "Calmar Ratio": f"{calmar:.2f}",
         "Win Rate": f"{win_rate:.1%}",
+        "Win Rate (traded)": f"{traded_win_rate:.1%}",
+        "Avg Turnover": f"{avg_turnover:.1%}",
         "Avg Win": f"{avg_win:.2%}",
         "Avg Loss": f"{avg_loss:.2%}",
         "Profit Factor": f"{profit_factor:.2f}",
         "Final Equity": f"{equity_curve.iloc[-1]:.2f}x",
-        "Weeks Traded": str(len(weekly_returns)),
+        "Observations": str(len(weekly_returns)),
     }
 
 
@@ -595,7 +699,7 @@ def plot_results(
     lines2, labels2 = ax2.get_legend_handles_labels()
     ax.legend(lines1 + lines2, labels1 + labels2, loc="upper left")
 
-    ax.set_title("BTC Regime Timeline (ImNuza Option B: 6-factor trend composite)")
+    ax.set_title("BTC Regime Timeline (ImNuza Option B: 5-factor trend composite)")
     ax.grid(True, alpha=0.3)
 
     fig.tight_layout()
@@ -657,7 +761,9 @@ def main():
 
     # 3. Alt factor scores
     print("\n[3/6] Computing alt factor scores...")
-    print(f"  Active factors: funding_rate (55%), price_momentum (45%)")
+    fw = FACTOR_WEIGHTS.get("funding_rate", 0.45)
+    mw = FACTOR_WEIGHTS.get("price_momentum", 0.55)
+    print(f"  Active factors: funding_rate ({fw:.0%}), price_momentum ({mw:.0%})")
     print(f"  Removed May 7: revenue_growth (+0.01 Sharpe), activity_momentum (+0.01 Sharpe)")
     print(f"  Never implemented: oi_confirmation (no historical HL OI)")
     print(f"  BNB/XMR: no on-chain data — compete on price + funding only")
@@ -678,7 +784,7 @@ def main():
     print("\n[6/6] Performance Report")
     print("=" * 60)
     print("\n--- Strategy ---")
-    strat_metrics = compute_metrics(backtest["equity"])
+    strat_metrics = compute_metrics(backtest["equity"], backtest.attrs.get("turnover_rates"))
     for k, v in strat_metrics.items():
         print(f"  {k:<20s}: {v:>10s}")
 

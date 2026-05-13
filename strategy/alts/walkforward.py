@@ -18,7 +18,6 @@ RESULTS_DIR = ROOT_DIR / "results" / "integrated"
 TRAIN_START = "2022-01-01"
 TRAIN_END = "2023-12-31"
 TEST_START = "2024-01-01"
-TEST_END = "2026-01-31"
 CANDIDATE_THRESHOLDS = [50, 55, 60, 65, 70]
 WEEKS_PER_YEAR = 52.0
 
@@ -198,7 +197,8 @@ def main():
           f"DD={train_parsed['max_dd']:.1f}%  "
           f"Equity={train_parsed['final_equity']:.2f}x  "
           f"InMarket={train_tim:.0f}%")
-    print(f"  Test  ({TEST_START} to {TEST_END}):  "
+    test_end_date = test_eq.index[-1].strftime("%Y-%m-%d")
+    print(f"  Test  ({TEST_START} to {test_end_date}):  "
           f"Sharpe={test_parsed['sharpe']:.2f}  "
           f"Ret={test_parsed['ann_return']:.1f}%  "
           f"DD={test_parsed['max_dd']:.1f}%  "

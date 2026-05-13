@@ -3,6 +3,7 @@ Transaction Cost Model -- Post-trade cost analysis on strategy backtest
 Artemis Quant Competition Track #1 | Deadline: June 1, 2026
 
 Models taker fees + slippage to show the gap between paper and real returns.
+Costs are charged on position changes (turnover), not on static holds.
 """
 
 import pandas as pd
@@ -35,36 +36,16 @@ def slippage_rate(position_notional_usd: float) -> float:
 
 # ── Cost Calculation Helper ──────────────────────────────────────────────────
 
-def compute_trading_cost_pct(
-    equity_multiple: float,
-    leverage: float,
-    weights: dict,
-    initial_capital: float = INITIAL_CAPITAL,
-    is_exit_only: bool = False,
-) -> float:
-    """
-    Return the trading cost as a fraction of equity (one period).
-
-    Full round-trip: 2 * leverage * (taker_fee + wavg_slippage)
-    Exit-only:       leverage * (taker_fee + wavg_slippage)
-    """
+def compute_per_side_rate(weights: dict, leverage: float, equity_multiple: float,
+                          initial_capital: float = INITIAL_CAPITAL) -> float:
+    """Weighted-average per-side cost rate (taker fee + wavg slippage)."""
     actual_equity = equity_multiple * initial_capital
     total_notional = actual_equity * leverage
-
-    # Weighted-average slippage across positions
     wavg_slippage = 0.0
     for asset, w in weights.items():
         pos_notional = total_notional * w
         wavg_slippage += w * slippage_rate(pos_notional)
-
-    per_side_rate = TAKER_FEE + wavg_slippage
-
-    if is_exit_only:
-        cost_pct = leverage * per_side_rate
-    else:
-        cost_pct = 2.0 * leverage * per_side_rate
-
-    return cost_pct
+    return TAKER_FEE + wavg_slippage
 
 
 # ── Backtest With Costs ─────────────────────────────────────────────────────
@@ -80,9 +61,15 @@ def run_backtest_with_costs(
     Mirrors bt.run_backtest() but tracks two equity curves.
 
     * gross_equity  -- no costs (identical to original backtest)
-    * net_equity    -- taker fees + slippage deducted
+    * net_equity    -- taker fees + slippage deducted on turnover
 
-    Returns (gross_df, net_df) -- each a DataFrame with the same columns
+    Costs are charged on position changes, not on static holds:
+    - Entry (flat → invested): 1 side × leverage × (taker + slippage)
+    - Rebalance (weights changed): turnover × 2 sides × leverage × (taker + slippage)
+    - Exit (invested → flat): 1 side × prev_leverage × (taker + slippage)
+    - Hold (same weights, same leverage): no cost
+
+    Returns (gross_df, net_df) — each a DataFrame with the same columns
     as the original backtest output.
     """
     common_dates = prices.index.intersection(regime.index)
@@ -93,9 +80,8 @@ def run_backtest_with_costs(
     gross_equity = 1.0
     net_equity = 1.0
 
-    # State for detecting entry/exit transitions
-    prev_was_invested = False
-    last_weights: dict = {}
+    prev_is_invested = False
+    prev_weights: dict = {}
     prev_leverage = 0.0
 
     for i, date in enumerate(common_dates):
@@ -116,11 +102,9 @@ def run_backtest_with_costs(
 
         prev_date = common_dates[i - 1]
 
-        # T-1 regime data
         btc_score = regime.loc[prev_date, "btc_score"]
         prev_regime = regime.loc[prev_date, "regime"]
 
-        # Leverage decision
         if btc_score >= 70:
             leverage = 2.5
         elif btc_score >= bt.BULL_THRESHOLD:
@@ -155,7 +139,6 @@ def run_backtest_with_costs(
                         weights[~capped] += excess / (~capped).sum()
                         weights = weights / weights.sum()
 
-                    # Compute weekly return for each position
                     for asset, w in weights.items():
                         if asset in prices.columns:
                             px_prev = prices.loc[prev_date, asset]
@@ -164,7 +147,6 @@ def run_backtest_with_costs(
                                 asset_ret = (px_now / px_prev) - 1
                                 port_return += w * asset_ret * leverage
 
-                            # Funding cost (signed: positive = pay, negative = receive)
                             if prev_date in funding.index and asset in funding.columns:
                                 fr = funding.loc[prev_date, asset]
                                 if pd.notna(fr) and fr != 0:
@@ -174,39 +156,42 @@ def run_backtest_with_costs(
                         f"{a}:{w:.0%}" for a, w in weights.items()
                     )
 
-        # ── Trading cost computation ────────────────────────────────────
+        # ── Trading cost: charged on position changes, not static holds ──
         trading_cost = 0.0
+        is_invested = leverage > 0 and len(weights) > 0
 
-        if leverage > 0 and len(weights) > 0:
-            # Full round-trip (entry + exit costs) this period
-            cost_pct = compute_trading_cost_pct(
-                gross_equity,
-                leverage,
-                weights,
-                initial_capital=initial_capital,
-                is_exit_only=False,
-            )
-            trading_cost = cost_pct
+        if is_invested and not prev_is_invested:
+            # Entering: 1 side (entry only)
+            per_side = compute_per_side_rate(weights, leverage, gross_equity, initial_capital)
+            trading_cost = leverage * per_side
 
-        elif prev_was_invested and leverage == 0:
-            # Exiting: pay exit-only cost on previous week's weights
-            cost_pct = compute_trading_cost_pct(
-                gross_equity,
-                prev_leverage,
-                last_weights,
-                initial_capital=initial_capital,
-                is_exit_only=True,
-            )
-            trading_cost = cost_pct
+        elif is_invested and prev_is_invested:
+            # Staying invested: charge on turnover between old and new weights
+            all_assets = set(list(prev_weights.keys()) + list(weights.keys()))
+            turnover = 0.0
+            for asset in all_assets:
+                old_w = prev_weights.get(asset, 0.0)
+                new_w = weights.get(asset, 0.0)
+                turnover += abs(new_w - old_w)
+            turnover /= 2.0
+
+            if turnover > 0.001:
+                per_side = compute_per_side_rate(weights, leverage, gross_equity, initial_capital)
+                trading_cost = 2.0 * turnover * leverage * per_side
+
+        elif not is_invested and prev_is_invested:
+            # Exiting: 1 side on previous position
+            per_side = compute_per_side_rate(prev_weights, prev_leverage, gross_equity, initial_capital)
+            trading_cost = prev_leverage * per_side
 
         # ── Update equity curves ────────────────────────────────────────
         gross_equity *= 1.0 + port_return - funding_cost
         net_equity *= 1.0 + port_return - funding_cost - trading_cost
 
         # ── Track state for next iteration ──────────────────────────────
-        prev_was_invested = leverage > 0
+        prev_is_invested = is_invested
         prev_leverage = leverage
-        last_weights = dict(weights)
+        prev_weights = dict(weights)
 
         # ── Build result rows ───────────────────────────────────────────
         gross_row = {
@@ -258,10 +243,10 @@ def _parse_metric_value(s) -> float:
 def build_comparison(gross_metrics: dict, net_metrics: dict) -> pd.DataFrame:
     """
     Build a comparison DataFrame with columns:
-        metric, gross_value, net_value, cost_drag_pct
+        metric, gross_value, net_value, cost_drag
 
-    * ann_return / max_dd: drag = absolute difference in percentage points
-    * sharpe / calmar / final_equity: drag = relative % change
+    Cost drag is computed as relative change for ratio metrics (Sharpe, Calmar, etc.)
+    and absolute difference (in pp) for return/drawdown.
     """
     rows = []
 
@@ -271,10 +256,6 @@ def build_comparison(gross_metrics: dict, net_metrics: dict) -> pd.DataFrame:
         "Sharpe Ratio",
         "Max Drawdown",
         "Calmar Ratio",
-        "Win Rate",
-        "Avg Win",
-        "Avg Loss",
-        "Profit Factor",
         "Final Equity",
     ]
 
@@ -292,22 +273,19 @@ def build_comparison(gross_metrics: dict, net_metrics: dict) -> pd.DataFrame:
             # Absolute difference in percentage points
             drag = abs(g_val - n_val) * 100.0
             cost_disp = f"{drag:.1f}pp"
-        elif metric in ("Sharpe Ratio", "Calmar Ratio", "Final Equity"):
+        else:
             # Relative % change
             if abs(g_val) > 1e-12:
                 drag = (g_val - n_val) / abs(g_val) * 100.0
             else:
                 drag = 0.0
             cost_disp = f"{drag:.1f}%"
-        else:
-            drag = abs(g_val - n_val)
-            cost_disp = f"{drag:.4f}"
 
         rows.append({
             "metric": metric,
             "gross_value": g_disp,
             "net_value": n_disp,
-            "cost_drag_pct": cost_disp,
+            "cost_drag": cost_disp,
         })
 
     return pd.DataFrame(rows)

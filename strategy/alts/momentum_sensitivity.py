@@ -1,13 +1,11 @@
 """
 Momentum-window sensitivity sweep.
 
-Reruns the integrated backtest at momentum lookbacks {2, 3, 4, 6, 8} weeks.
+Reruns the integrated backtest at momentum lookbacks {2, 3, 4, 5, 6, 7, 8, 10} weeks.
 Captures Sharpe, Max DD, Calmar, Final Equity, Win Rate per window. Output
 saved to results/integrated/momentum_sensitivity.csv.
 
-The shipped configuration uses 4 weeks. This sweep confirms the choice is
-robust: Sharpe stays above 1.1 across windows 3-6, with 4 weeks giving the
-best max-drawdown and Calmar profile.
+The shipped configuration uses 7 weeks (optimal with Bybit-spliced XMR funding).
 """
 
 import pandas as pd
@@ -16,7 +14,7 @@ from pathlib import Path
 import backtest as bt
 
 
-WINDOWS = [2, 3, 4, 6, 8]
+WINDOWS = [2, 3, 4, 5, 6, 7, 8, 10]
 
 
 def _equity_metrics(equity: pd.Series) -> dict:

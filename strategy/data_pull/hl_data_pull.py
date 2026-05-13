@@ -16,10 +16,16 @@ from pathlib import Path
 
 sys.stdout.reconfigure(encoding="utf-8")
 
+def _last_friday() -> str:
+    """Most recent complete Friday (no future partial-week buckets)."""
+    today = datetime.now(timezone.utc).date()
+    fri = today - timedelta(days=(today.weekday() - 4) % 7)
+    return fri.strftime("%Y-%m-%d")
+
 HL_URL  = "https://api.hyperliquid.xyz/info"
 ASSETS  = ["SOL", "BNB", "HYPE", "XMR"]
 START   = "2022-01-01"
-END     = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+END     = _last_friday()
 OUT_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "alts"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -113,11 +119,13 @@ funding_frames = []
 for asset in ASSETS:
     print(f"\n  {asset}: fetching funding rates {START} → {END}...")
 
-    # Paginate in 90-day windows (hourly = ~2160 records per window)
+    # Paginate in 20-day windows. HL caps fundingHistory at 500 records per
+    # call; hourly funding * 20 days = 480, just under the cap. A larger
+    # window silently truncates and the tail of the requested range is lost.
     all_funding = []
     start_dt = datetime.strptime(START, "%Y-%m-%d").replace(tzinfo=timezone.utc)
     end_dt   = datetime.strptime(END,   "%Y-%m-%d").replace(tzinfo=timezone.utc)
-    window   = timedelta(days=90)
+    window   = timedelta(days=20)
     current_dt = start_dt
 
     while current_dt < end_dt:

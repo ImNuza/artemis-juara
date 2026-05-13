@@ -12,16 +12,20 @@ from .plots import plot_regime_timeline, plot_subindicator_breakdown
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 RESULTS_DIR = BASE_DIR / "results" / "btc_regime"
+DATA_ALTS_DIR = BASE_DIR / "data" / "alts"
 
 
 def run(mode: str = "trend"):
     """Run pipeline. Default mode = 'trend' (Option B), the recommended ship config.
     Override with mode='plan' for Option A or mode='D' for Option D."""
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    DATA_ALTS_DIR.mkdir(parents=True, exist_ok=True)
     diag, weekly = compute_regime_timeline(mode=mode)
 
     diag.to_csv(RESULTS_DIR / "btc_composite_daily_full.csv")
     weekly.to_csv(RESULTS_DIR / "btc_regime_weekly.csv", index=False)
+    # Also write to data/alts so the integrated backtest picks it up
+    weekly.to_csv(DATA_ALTS_DIR / "btc_regime_weekly_optionB.csv", index=False)
 
     diag_lite_cols = [c for c in diag.columns if c.startswith("norm_")] + [
         "btc_score", "btc_score_lagged", "regime", "action"

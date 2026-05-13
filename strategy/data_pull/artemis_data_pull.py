@@ -21,6 +21,7 @@ Outputs (weekly, Friday-aligned):
 import json
 import os
 import time
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -29,9 +30,15 @@ import pandas as pd
 
 API_KEY = os.environ.get("ARTEMIS_API_KEY", "")
 BASE_URL = "https://data-svc.artemisxyz.com"
-DATA_DIR = Path("data")
+DATA_DIR = Path("data/alts")
+def _last_friday() -> str:
+    from datetime import timedelta
+    today = datetime.now().date()
+    fri = today - timedelta(days=(today.weekday() - 4) % 7)
+    return fri.strftime("%Y-%m-%d")
+
 START = "2022-01-01"
-END   = "2026-01-31"
+END   = _last_friday()
 
 ASSETS = {
     "solana":      "SOL",
@@ -86,6 +93,8 @@ def to_weekly(rows: list[tuple], agg: str) -> pd.Series:
     s = df["val"]
     if agg == "sum":
         return s.resample("W-FRI").sum()
+    elif agg == "last":
+        return s.resample("W-FRI").last()
     return s.resample("W-FRI").mean()
 
 
@@ -121,11 +130,35 @@ def pull_metric(metric: str, agg: str, out_filename: str) -> None:
     print(out.tail(5).to_string())
 
 
+def pull_btc_price() -> None:
+    """Pull BTC weekly close from Artemis and save as CSV."""
+    print(f"\n{'='*55}")
+    print("Pulling BTC PRICE (weekly close)")
+    print(f"{'='*55}")
+    rows = fetch("bitcoin", "PRICE", START, END)
+    if not rows:
+        print("  WARNING: no BTC price data — skipping")
+        return
+    weekly = to_weekly(rows, "last")
+    weekly.name = "BTC"
+    weekly = weekly.dropna()
+    weekly.index = weekly.index.strftime("%Y-%m-%d")
+    out_path = DATA_DIR / "btc_price_artemis.csv"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    weekly.to_csv(out_path, index_label="date")
+    print(f"  {len(rows)} daily rows -> {len(weekly)} weekly rows")
+    print(f"  first: {weekly.index[0]}  last: {weekly.index[-1]}")
+    print(f"  Saved: {out_path}")
+    print(weekly.tail(5).to_string())
+
+
 def main():
     DATA_DIR.mkdir(exist_ok=True)
     pull_metric("FEES", "sum",  "artemis_fees_weekly.csv")
     pull_metric("DAU",  "mean", "artemis_dau_weekly.csv")
+    pull_btc_price()
     print("\nDone. On-chain data for SOL and HYPE saved to data/.")
+    print("BTC price saved to data/alts/.")
     print("XMR / equities: FEES and DAU not available in Artemis.")
     print("BNB: intentionally excluded.")
 
