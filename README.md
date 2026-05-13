@@ -1,4 +1,4 @@
-# Artemis Quant Competition 2026 — Track 1
+# Artemis Quant Competition 2026: Track 1
 
 **Team:** ImNuza (BTC regime gate) + Xynerss (alt factor engine)
 **Deadline:** June 1, 2026 @ 11:59pm EST
@@ -25,8 +25,8 @@ python strategy/alts/momentum_sensitivity.py
 
 Two-layer system on Hyperliquid Perps, weekly rebalance:
 
-1. **BTC Regime Gate (ImNuza)** — 5-factor composite score classifies market as BULL/BEAR/NEUTRAL
-2. **Alt Factor Engine (Xynerss)** — 2-factor ranking (funding rate 55%, price momentum 45%), top-3 with 40% cap
+1. **BTC Regime Gate (ImNuza)**: 5-factor composite score classifies market as BULL/BEAR/NEUTRAL
+2. **Alt Factor Engine (Xynerss)**: 2-factor ranking (funding rate 55%, price momentum 45%), top-3 with 40% cap
 
 **Results:** Sharpe 1.15, max DD -16.4%, final equity 4.95x. Momentum lookback = 4 weeks; sensitivity sweep at `results/integrated/momentum_sensitivity.csv` shows the strategy is robust across 3–6 week windows.
 
