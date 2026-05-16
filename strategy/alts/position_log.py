@@ -124,24 +124,27 @@ def _section_asset_frequency(result: pd.DataFrame) -> str:
 
 def _section_year_breakdown(result: pd.DataFrame) -> str:
     rows = []
+    prior_end_eq = 1.0  # baseline equity before the first traded year
     for year, group in result.groupby(result.index.year):
         if len(group) == 0:
             continue
         bull_weeks = (group["regime"] == "BULL").sum()
         traded = (group["leverage"] > 0).sum()
-        start_eq = group["equity"].iloc[0]
         end_eq = group["equity"].iloc[-1]
-        year_return = (end_eq / start_eq) - 1.0
+        # Year-on-year return uses prior year's ending equity as the base,
+        # so per-year returns compound exactly to the headline final equity.
+        year_return = (end_eq / prior_end_eq) - 1.0
         max_lev = group["leverage"].max()
         rows.append({
             "Year": int(year),
             "Weeks": len(group),
             "BULL weeks": int(bull_weeks),
             "Weeks traded": int(traded),
-            "Year return": f"{year_return:+.1%}",
+            "Year return (YoY)": f"{year_return:+.1%}",
             "Max leverage": f"{max_lev:.1f}x",
             "End equity": f"{end_eq:.2f}x",
         })
+        prior_end_eq = end_eq
     df = pd.DataFrame(rows)
 
     lines = [
@@ -152,6 +155,14 @@ def _section_year_breakdown(result: pd.DataFrame) -> str:
     ]
     for _, r in df.iterrows():
         lines.append("| " + " | ".join(str(v) for v in r.values) + " |")
+    lines.append("")
+    lines.append(
+        "*Note:* `Year return (YoY)` is the realised year-on-year equity change "
+        "(`End equity / prior year's End equity − 1`), so the yearly returns compound "
+        "exactly to the headline final equity. This differs from the strategy's "
+        "headline annualised return (geometric CAGR over the full window), which is "
+        "reported in §1."
+    )
     lines.append("")
     return "\n".join(lines)
 

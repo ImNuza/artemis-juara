@@ -1,8 +1,8 @@
-# Position Log ,  BTC Regime-Gated Alt Factor Strategy
+# Position Log — BTC Regime-Gated Alt Factor Strategy
 
 Auto-generated from the integrated backtest (`strategy/alts/backtest.py`). Re-run `python strategy/alts/position_log.py` to refresh.
 
-**Note:** BTC is the regime gate signal only ,  it is never held as a position. The strategy trades alt perps on Hyperliquid; BTC price and on-chain data determine whether the strategy is deployed (BULL) or flat (BEAR/NEUTRAL).
+**Note:** BTC is the regime gate signal only — it is never held as a position. The strategy trades alt perps on Hyperliquid; BTC price and on-chain data determine whether the strategy is deployed (BULL) or flat (BEAR/NEUTRAL).
 
 _Window: 2022-01-07 → 2026-05-08._
 
@@ -45,13 +45,15 @@ Across **38 weeks** where the strategy was deployed:
 
 ## 4. Year-by-Year Breakdown
 
-| Year | Weeks | BULL weeks | Weeks traded | Year return | Max leverage | End equity |
+| Year | Weeks | BULL weeks | Weeks traded | Year return (YoY) | Max leverage | End equity |
 |---|---|---|---|---|---|---|
 | 2022 | 52 | 0 | 0 | +0.0% | 0.0x | 1.00x |
 | 2023 | 52 | 2 | 2 | +41.7% | 2.5x | 1.42x |
-| 2024 | 52 | 24 | 24 | +205.0% | 2.5x | 3.54x |
-| 2025 | 52 | 12 | 12 | +42.7% | 2.5x | 5.63x |
+| 2024 | 52 | 24 | 24 | +149.6% | 2.5x | 3.54x |
+| 2025 | 52 | 12 | 12 | +59.2% | 2.5x | 5.63x |
 | 2026 | 19 | 0 | 0 | +0.0% | 0.0x | 5.63x |
+
+*Note:* `Year return (YoY)` is the realised year-on-year equity change (`End equity / prior year's End equity − 1`), so the yearly returns compound exactly to the headline final equity. This differs from the strategy's headline annualised return (geometric CAGR over the full window), which is reported in §1.
 
 ## 5. Full Position Log (Every BULL Week)
 

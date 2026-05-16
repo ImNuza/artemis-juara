@@ -49,8 +49,16 @@ SHADOW_ASSETS: set[str] = set()
 # the backtest window — picks pre-HL-listing are venue-mismatch, not phantom.
 # yfinance/Artemis price backfill provides those real prices for analytical
 # context (research_report.md §11).
-# XMR funding is now Bybit-spliced pre-HL-listing (2026-01-16) so it has
-# real funding signal across the full backtest — no gate needed.
+# Funding is Bybit-spliced pre-HL for SOL, BNB (pre-May-2023) and XMR
+# (pre-2026-01-16) via bybit_funding_pull.py. HL fundingHistory returns
+# data from May 2023 onward for SOL/BNB/HYPE and from Jan 2026 onward
+# for XMR; Bybit fills each token's pre-HL window so the funding factor
+# has real signal across the full backtest. The XMR splice is signal-
+# critical (XMR picked in 24% of BULL weeks, all in the Bybit window);
+# the SOL/BNB splice is precautionary (their Bybit window is entirely
+# BEAR/NEUTRAL so it affects zero picks, but is retained for one
+# principled rule: HL where available, Bybit as cross-venue proxy where
+# not). No phantom gate needed for any of the three.
 HL_TOKEN_LISTING = {
     "HYPE": pd.Timestamp("2024-12-06"),  # TGE was 2024-11-29; first HL price 2024-12-06
     "CRCL": pd.Timestamp("2025-06-06"),  # IPO was 2025-06-05; first Friday post-IPO
@@ -389,8 +397,8 @@ def compute_alt_scores(
         for asset in all_assets:
             pm_val = px_score.loc[week, asset] if (week in px_score.index and asset in px_score.columns) else 50.0
             fr_val = fr_score.loc[week, asset] if (week in fr_score.index and asset in fr_score.columns) else 50.0
-            w_pm = FACTOR_WEIGHTS.get("price_momentum", 0.45)
-            w_fr = FACTOR_WEIGHTS.get("funding_rate", 0.55)
+            w_pm = FACTOR_WEIGHTS.get("price_momentum", 0.55)
+            w_fr = FACTOR_WEIGHTS.get("funding_rate", 0.45)
             total_w = w_pm + w_fr
             if total_w > 0:
                 composite.loc[week, asset] = (
@@ -424,12 +432,14 @@ def run_backtest(
 ) -> pd.DataFrame:
     """
     Weekly backtest loop with T-1 lag, regime gate, top-3 long selection
-    (BULL), bottom-2 short selection (BEAR), signal-weighted allocation,
-    leverage scaling, and funding cost deduction.
+    (BULL), signal-weighted allocation, leverage scaling, and funding
+    cost deduction.
 
-    Long sleeve (BULL): top 3 alts, signal-weighted, 1.5x-2.5x leverage.
-    Short sleeve (BEAR): bottom 2 alts, signal-weighted, 1.0x leverage.
-    NEUTRAL: flat (no long, no short).
+    BULL: top 3 alts, signal-weighted, 1.5x (BTC 60-70) or 2.5x (BTC ≥ 70) leverage.
+    BEAR / NEUTRAL: flat.
+
+    A short overlay during BEAR was tested twice (May 7 and May 10) and
+    rejected both times; see the comment block in the BEAR branch below.
     """
     common_dates = prices.index.intersection(regime.index)
     common_dates = common_dates[common_dates >= START_DATE]
