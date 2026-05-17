@@ -22,6 +22,8 @@ python strategy/alts/momentum_sensitivity.py
 python strategy/alts/position_log.py
 ```
 
+macOS users: substitute `python3` for `python` and `pip3` for `pip` — recent macOS versions no longer ship the unsuffixed commands.
+
 ## Strategy
 
 Two-layer system on Hyperliquid Perps, weekly rebalance:

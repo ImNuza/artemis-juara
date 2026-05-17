@@ -203,7 +203,12 @@ def load_equity_quarterly(path: Path, weekly_index: pd.DatetimeIndex) -> pd.Data
 def load_funding(path: Path) -> pd.DataFrame:
     """Load weekly funding rates for tokens (HL main dex + Bybit splice).
     Equity perp funding is handled separately in compute_alt_scores so
-    pre-listing weeks don't contaminate the cross-sectional normalization."""
+    pre-listing weeks don't contaminate the cross-sectional normalization.
+
+    Note: the first row (2022-01-07) has NaN for XMR in the Bybit splice
+    because XMR perps had no funding-rate history on Bybit on that exact
+    date. The fillna(0.0) below treats it as a neutral observation. This
+    affects one cross-section in the warmup window and is immaterial."""
     df = pd.read_csv(path, parse_dates=["date"], index_col="date")
     for col in df.columns:
         df[col] = pd.to_numeric(df[col], errors="coerce")
@@ -739,8 +744,8 @@ def main():
     equity_rev = load_equity_quarterly(EQUITY_REVENUE_PATH, prices.index)
     btc_price = load_btc_price()
     print(f"  Universe ({len(prices.columns)} assets): {list(prices.columns)}")
-    print(f"  Price data: {len(prices)} weeks ({prices.index[0].date()} to {prices.index[-1].date()})")
-    print(f"  Funding data: {len(funding)} weeks, {list(funding.columns)}")
+    print(f"  Price data: {len(prices)} weekly rows ({prices.index[0].date()} to {prices.index[-1].date()}, incl. 1 warmup row before funding starts)")
+    print(f"  Funding data: {len(funding)} weekly rows, {list(funding.columns)}")
     if not fees.empty:
         print(f"  Artemis FEES: {list(fees.columns)}, {len(fees)} weeks ({fees.index[0].date()} to {fees.index[-1].date()})")
     else:
