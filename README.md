@@ -22,14 +22,18 @@ python strategy/alts/momentum_sensitivity.py
 python strategy/alts/position_log.py
 ```
 
+macOS users: substitute `python3` for `python` and `pip3` for `pip` — recent macOS versions no longer ship the unsuffixed commands.
+
 ## Strategy
 
 Two-layer system on Hyperliquid Perps, weekly rebalance:
 
-1. **BTC Regime Gate (ImNuza)**: 5-factor composite score classifies market as BULL/BEAR/NEUTRAL
-2. **Alt Factor Engine (Xynerss)**: 2-factor ranking (funding rate 45%, price momentum 55%), top-3 with 40% cap, momentum lookback 7 weeks
+1. **BTC Regime Gate (ImNuza):** 5-factor composite score classifies market as BULL/BEAR/NEUTRAL
+2. **Alt Factor Engine (Xynerss):** 2-factor ranking (funding rate 45%, price momentum 55% over a 7-week window), top-3 with 40% cap
 
-**Results:** Sharpe 1.31, max DD -27.2%, final equity 5.63x (net of costs: Sharpe 1.27, 5.33x). Phantom-pick gate excludes assets before they existed (HYPE pre-TGE, CRCL pre-IPO). XMR funding is Bybit-spliced pre-HL-listing (2026-01-16) for real signal across the full backtest. Full optimization sweep at `results/integrated/optimization_sweep.csv`.
+**Results:** Sharpe 1.31, max DD -27.2%, final equity 5.63x (net of costs: Sharpe 1.27, 5.33x). Phantom-pick gate excludes assets before they existed (HYPE pre-TGE, CRCL pre-IPO). XMR funding is Bybit-spliced pre-HL-listing (2026-01-16) for real signal across the full backtest.
+
+Full optimization sweep at `results/integrated/optimization_sweep.csv`.
 
 For a week-by-week trace of every position the strategy held, see [`docs/position_log.md`](docs/position_log.md).
 
@@ -45,18 +49,10 @@ data/
 └── alts/          # Alt prices, funding, fees, regime CSV
 results/
 ├── btc_regime/    # Regime charts + CSVs
-└── integrated/    # Backtest chart, walkforward, cost, monte carlo
+└── integrated/    # Backtest chart, walkforward, cost, Monte Carlo
 docs/              # All documentation
-archive/           # v1 strategy, experiments, research, old data
 ```
 
 ## Reproducibility
 
-The integrated backtest (`strategy/alts/backtest.py`) runs from pre-computed CSV files in `data/`. No API keys are needed to reproduce the headline results.
-
-To regenerate the source data from scratch, you need:
-
-- `config.env` at the project root with `ARTEMIS_API_KEY=<key>` (Artemis API access)
-- `FRED_API_KEY` is only needed for Option D (not the shipped model)
-
-Data pull scripts are in `strategy/data_pull/`. The regime CSV is regenerated via `python -m strategy.btc_regime.run`.
+All data files are in `data/`. The regime CSV (`data/alts/btc_regime_weekly_optionB.csv`) is ImNuza's output. Run `python -m strategy.btc_regime.run` to regenerate it (requires Artemis API key in `config.env`). The backtest picks it up automatically.
