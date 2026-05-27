@@ -55,4 +55,6 @@ docs/              # All documentation
 
 ## Reproducibility
 
-All data files are in `data/`. The regime CSV (`data/alts/btc_regime_weekly_optionB.csv`) is ImNuza's output. Run `python -m strategy.btc_regime.run` to regenerate it (requires Artemis API key in `config.env`). The backtest picks it up automatically.
+The integrated backtest (`strategy/alts/backtest.py`) runs from pre-computed CSV files in `data/`. No API keys are needed to reproduce the headline results.
+
+To regenerate source data from scratch, create a `config.env` file at the project root containing `ARTEMIS_API_KEY=<your-artemis-api-key>`, then run the pull scripts in `strategy/data_pull/` and `python -m strategy.btc_regime.run` to regenerate the regime CSV. The backtest picks it up automatically.
