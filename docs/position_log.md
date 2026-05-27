@@ -1,4 +1,4 @@
-# Position Log ,  BTC Regime-Gated Alt Factor Strategy
+# Position Log -  BTC Regime-Gated Alt Factor Strategy
 
 Auto-generated from the integrated backtest (`strategy/alts/backtest.py`). Re-run `python strategy/alts/position_log.py` to refresh.
 
