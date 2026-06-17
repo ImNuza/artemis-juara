@@ -259,7 +259,6 @@ Status as of 2026-05-16.
 - [x] `requirements.txt` for Python dependencies
 - [x] Reproduction instructions (`README.md` Quick Start + this file §9)
 - [x] ImNuza's regime pipeline code included (`strategy/btc_regime/`)
-- [x] Research report drafted (`docs/research_report.md`)
 - [x] Internal explainer drafted (this file)
 - [x] Full week-by-week position log (`docs/position_log.md`)
 - [x] Code fixes applied (chart title 6→5 factor, regime output path, equity_rev passthrough, dead code cleanup)
@@ -269,11 +268,6 @@ Status as of 2026-05-16.
 - [x] Report polished (turnover/win rate in headline table, abstract trimmed, 10 structural fixes applied, section numbering reflowed)
 - [x] Competition PDF requirements cross-referenced; all strategy requirements met
 - [x] Git initialised, committed, and pushed to public GitHub (`github.com/ImNuza/artemis-juara`)
-- [x] Pitch deck built as `docs/Artemis_Pitch_Deck.pptx` (13 slides; universe re-categorised into 6 buckets, correlation numbers computed from price data)
-
-**Outstanding (submission blockers)**
-- [ ] **Render `docs/research_report.md` as PDF.** Pandoc + LaTeX. PDF is the email attachment.
-- [ ] **Export pitch deck to Google Slides and share with `lindsey@artemisanalytics.xyz`.** The `.pptx` is built; upload to Drive, set viewer access, capture the share link for the submission email.
 
 **Optional polish**
 - [ ] Refresh data via the pull scripts; rerun analysis suite. Update headline numbers if they shift materially.

@@ -48,7 +48,7 @@ SHADOW_ASSETS: set[str] = set()
 # SOL/BNB/COIN/HOOD all existed on other venues with real prices throughout
 # the backtest window — picks pre-HL-listing are venue-mismatch, not phantom.
 # yfinance/Artemis price backfill provides those real prices for analytical
-# context (research_report.md §11).
+# context.
 # Funding is Bybit-spliced pre-HL for SOL, BNB (pre-May-2023) and XMR
 # (pre-2026-01-16) via bybit_funding_pull.py. HL fundingHistory returns
 # data from May 2023 onward for SOL/BNB/HYPE and from Jan 2026 onward
@@ -100,7 +100,7 @@ TOP_N = 3
 # ══════════════════════════════════════════════════════════════════════════════
 
 # HIP-3 listing dates on the `xyz` perp dex — HL is primary from these dates onward,
-# yfinance backfills history before. See docs/research_report.md §11 (Data Sources).
+# yfinance backfills history before.
 HL_EQUITY_LISTING = {
     "COIN": pd.Timestamp("2025-11-25"),
     "HOOD": pd.Timestamp("2025-11-26"),
